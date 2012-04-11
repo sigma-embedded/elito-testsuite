@@ -1,0 +1,8 @@
+#! /bin/bash
+
+CATEGORY=_selftest
+FAILS=true
+
+run() {
+      false
+}

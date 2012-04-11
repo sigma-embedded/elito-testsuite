@@ -1,0 +1,109 @@
+#! /bin/bash
+
+panic() {
+    echo "$@" >&2
+    exit 1
+}
+
+warn() {
+    echo "$@" >&2
+}
+
+debug() {
+    local section=$1
+    shift
+    echo "$section: $@" >&3
+}
+
+# push_back <array-var> [<element>]*
+push_back() {
+    local v=$1
+    shift
+    eval $v="( \"\${$v[@]}\" \"\$@\" )"
+}
+
+# is_in <key> [<element>]*
+is_in() {
+
+    case $1 in
+      (ANY)  return 0 ;;
+      (NONE) return 1 ;;
+      (*)
+	    local k=$1
+	    local i
+	    shift
+
+	    for i; do
+		test x"$i" != xALL || return 0
+		test x"$i" != x"$k" || return 0
+	    done
+	    ;;
+    esac
+
+    return 1
+}
+
+# is_subset <array1-var> <array2-var>
+is_subset() {
+    local v1
+    local v2
+    local i
+
+    eval v1="( \"\${$1[@]}\" )"
+    eval v2="( \"\${$2[@]}\" )"
+
+    debug CORE "check whether '${v1[*]}' is subset of '${v2[*]}'"
+
+    for i in "${v1[@]}"; do
+	! is_in "$i" "${v2[@]}" || {
+	  debug CORE "is a subset"
+	  return 0
+	}
+    done
+
+    debug CORE "is not a subset"
+    return 1
+}
+
+# find_file <result-var> <fname> [<directories>]*
+find_file() {
+    local __rvar=$1
+    local __fname=$2
+    local __i
+    shift
+    for __i in "$@"; do
+	! test -e "$__i/$__fname" || {
+	  eval $__rvar="\$__i/\$__fname"
+	  return 0
+	}
+    done
+
+    debug CORE "file '$__fname' not found in $*"
+    return 1
+}
+
+# abspath <result-var> <rel-fname>
+abspath() {
+    case $2 in
+      (/*)
+	    eval $1=\$2;;
+      (*)
+	    eval $1=\$PWD/\$2;;
+    esac
+}
+
+# parse_bool <value> [<error-msg>]
+parse_bool() {
+    case x$1 in
+      (x0|x[Ff][Aa][Ll][Ss][Ee]|x[Ff]|x)
+	    return 1
+	    ;;
+      (x1|x[Tt][Rr][Uu][Ee]|x[Tt])
+	    return 0
+	    ;;
+      (*)
+	    set -- "$@" "Bad boolean value '$1'"
+	    panic "$2"
+	    ;;
+    esac
+}

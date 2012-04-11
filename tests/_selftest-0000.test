@@ -1,0 +1,7 @@
+#! /bin/bash
+
+CATEGORY=_selftest
+
+run() {
+      true
+}

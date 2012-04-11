@@ -1,0 +1,300 @@
+#! /bin/bash
+
+# Copyright (C) 2012 Enrico Scholz <enrico.scholz@informatik.tu-chemnitz.de>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 3 of the License.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+pkglibdir='@PKGLIBDIR@'
+pkgdatadir='@PKGDATADIR@'
+### development line ###
+pkglibdir=${_pkglibdir:-.}; pkgdatadir=${_pkgdatadir:-.}
+
+. "${pkgdatadir}/functions"
+
+prog_success=false
+tmpdir=$(mktemp -d -t runtests.XXXXXX) || panic "Could not create tmpdir"
+trap "
+\$prog_success || cat $tmpdir/debug
+cat \$MFILE
+rm -rf $tmpdir
+" EXIT
+
+MFILE=$tmpdir/test.mk
+TESTDIR=$tmpdir/tests
+CATDIR=$tmpdir/categories
+
+mkdir -p $TESTDIR $CATDIR $CATDIR.ordered $CATDIR.stamps
+
+exec 3>$tmpdir/debug
+
+show_help() {
+    cat <<"EOF"
+Usage: runtests [-d|--directory <script-dir>] [-g|--groups <group-spec>]
+         [-e|--environment <environment>]
+
+<group-spec>   = <group-single> | <group-single> ',' <group-spec>
+<group-single> = <group-name> | '!' <group-name>
+EOF
+    exit 0
+}
+
+
+register_group() {
+    local old_ifs=$IFS
+    local IFS=,
+    eval set -- "\$@"
+    IFS=$old_ifs
+
+    for i; do
+	case $i in
+	  (!*)
+		push_back _groups_neg "${i##!}"
+		;;
+	  (^*)
+		push_back _groups_neg "${i##^}"
+		;;
+	  (*)
+		push_back _groups_pos "$i"
+		;;
+	esac
+    done
+}
+
+eval set -- `\
+  getopt --name $0 \
+  --longoptions groups:,directory:,environment:,help,version \
+  -o d:g:e: -- "$@"`
+
+_directory=( )
+_environment=( )
+_user_groups=false
+_groups_pos=( )
+_groups_neg=( )
+
+while true; do
+    case $1 in
+      (--help) show_help;;
+      (--version) show_version ;;
+      (--groups|-g)
+	    _user_groups=true
+	    register_group "$2"
+	    shift
+	    ;;
+      (--directory|-d)
+	    push_back _directory "$2"
+	    shift
+	    ;;
+
+      (--environment|-e)
+	    _environment=( "$2" )
+	    shift
+	    ;;
+
+      (--)
+	    shift
+	    break
+	    ;;
+    esac
+    shift
+done
+
+_tests=( "$@" )
+
+$_user_groups || {
+    _groups_pos=( ALL )
+    _groups_neg=( interactive )
+}
+
+test ${#_directory[@]} -ne 0 || _directory=( "${pkgdatadir}/tests" )
+
+debug SELECTION "pos-groups=${_groups_pos[@]}"
+debug SELECTION "neg-groups=${_groups_neg[@]}"
+debug SELECTION "directories=${_directory[@]}"
+
+if test ${#_tests[@]} -eq 0; then
+    debug SELECTION "no tests specified; autodetecting them"
+    for d in "${_directory[@]}"; do
+	for i in $d/*.test; do
+	    test -r "$i" || continue
+	    fname=${i%%.test}
+	    fname=${fname##$d/}
+	    ! is_in "$fname" "${_tests[@]}" || \
+	      panic "Duplicate test '$fname'; filenames within the script directories (${_directory[*]}) must be unique"
+	      
+	    push_back _tests "$fname"
+	done
+    done
+fi
+
+if test "${#_environment[@]}" -eq 0; then
+    debug SELECTION "no environment specified; autodetecting them"
+    for d in "${_directory[@]}"; do
+        for i in "$d"/*.env; do
+    	    test -r "$i" || continue
+    	    test -x "$i" || {
+    	      warn "environment script '$i' not executable; skipping it"
+    	      continue
+    	    }
+	    
+    	    debug SELECTION "calling environment script '$i'"
+    	    xenv=`$i`
+    	    debug SELECTION "returned environment: $xenv"
+	    
+    	    eval push_back _environment $xenv
+        done
+    done
+fi
+
+debug SELECTION "selected environment: ${_environment[@]}"
+
+for d in "${_directory[@]}"; do
+    for i in "$d"/*.catorder; do
+	test -r "$i" || continue
+	while read order category; do
+	    debug RULE "category '$category' with order $order configured"
+	    printf '%04u' $[ 10#$order ] > "$CATDIR/$category"
+	done < "$i"
+    done
+done
+
+cat <<EOF >$MFILE
+TESTDIR = $TESTDIR
+
+include $pkgdatadir/runtests.mk
+
+EOF
+
+unset GROUPS
+NUMTESTS=0
+_categories=( )
+for t in "${_tests[@]}"; do
+    find_file fname "$t.test" "${_directory[@]}"
+    abspath afname "$fname"
+
+    test -r "$fname" || panic "No such test '$t'"
+    tnum=$NUMTESTS
+
+    (
+      debug SELECTION "#$tnum checking '$t ($afname)'"
+
+      GROUPS=
+      CATEGORY=misc
+      ENVIRONMENTS=ANY
+      NO_ENVIRONMENTS=NONE
+      FAILS=
+
+      . "$fname"
+
+      _skip_reason=
+      if ! is_subset   GROUPS _groups_pos; then
+	  debug SELECTION "skipping '$t' because not in pos-groups"
+	  _skip_reason="wrong group"
+      elif is_subset GROUPS _groups_neg; then
+	  debug SELECTION "skipping '$t' because in neg-groups"
+	  _skip_reason="unwanted group"
+      elif ! is_subset ENVIRONMENTS _environment; then
+	  debug SELECTION "skipping '$t' because not for current environment"
+	  _skip_reason="wrong environment"
+      elif is_subset NO_ENVIRONMENTS _environment; then
+	  debug SELECTION "skipping '$t' because of unsupported environment"
+	  _skip_reason="unsupported environment"
+      else
+	  debug SELECTION "test '$t' selected"
+      fi
+
+      opts=
+      if parse_bool "$FAILS" "$fname: bad boolean value '$FAILS' for 'FAILS'"; then
+	  opts=${opts:+$opts }--fail
+      else
+	  opts=
+      fi
+
+      if test -n "$_skip_reason"; then
+	  opts=${opts:+$opts }--skip=\"$_skip_reason\"
+      fi
+
+      ln -s $afname $TESTDIR/$tnum.lnk
+
+      cat <<EOF > $TESTDIR/$tnum
+#! /bin/bash -e
+
+. $TESTDIR/$tnum.lnk
+run
+EOF
+
+      chmod a+x $TESTDIR/$tnum
+
+      test -e "$CATDIR/$CATEGORY" || {
+	debug RULE "new category '$CATEGORY'; assigning default priority"
+	echo 5000 > "$CATDIR/$CATEGORY"
+      }
+
+      touch "$CATDIR.stamps/$CATEGORY"
+
+      cat <<EOF >>$MFILE
+## test '$t'
+_category := $CATEGORY
+run-categories: category-\$(_category)
+category-\$(_category):	test-$tnum
+test-$tnum: | category_start-\$(_category)
+test-$tnum: RUNTEST_OPTS=$opts
+test-$tnum: ID=$t
+EOF
+    )
+
+    let ++NUMTESTS
+done
+
+(
+  cd $CATDIR
+  for i in *; do
+      test -e "$i" || continue
+      read order < "$i"
+      debug CATEGORY "registering category '$i' with order $order"
+      echo "$order $i" > "$CATDIR.ordered/$order-$i"
+  done
+)
+
+(
+  cd $CATDIR.ordered
+  firstrun=true
+  for i in *; do
+      test -e "$i" || continue
+
+      read order category < "$i"
+
+      test -e "$CATDIR.stamps/$category" || {
+	debug CATEGORY "category '$category' not referenced"
+	continue
+      }
+
+      debug CATEGORY "creating targets for category '$category', order '$order'"
+      echo "## category '$category'"
+
+      if $firstrun; then
+	  echo "_category := $category"
+	  firstrun=false
+      else
+	  cat <<EOF
+_oldcategory := \$(_category)
+_category := $category
+category_start-\$(_category): | category-\$(_oldcategory)
+category-\$(_category): category_start-\$(_category)
+EOF
+      fi
+  done
+) >> $MFILE
+
+ls -l $TESTDIR
+make -C $tmpdir -f $MFILE run-categories -k
+#prog_success=true

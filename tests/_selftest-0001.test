@@ -1,0 +1,8 @@
+#! /bin/bash
+
+CATEGORY=_selftest
+GROUPS=interactive
+
+run() {
+      true
+}
