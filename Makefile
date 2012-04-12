@@ -5,8 +5,8 @@ PACKAGE_NAME = elito-testsuite
 PACKAGE_VERSION = 0.0.1
 
 AM_CFLAGS = -std=gnu99
-CFLAGS = -Wall -W -O1 -g -fstack-protector
-CPPFLAGS = -D_FORTIFY_SOURCE=2
+CFLAGS = -Wall -W -O2 -g -fstack-protector -Wno-unused-parameter -Wstrict-prototypes -Werror
+CPPFLAGS = -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE
 
 include $(top_srcdir)/mk/common.mk
 
@@ -26,6 +26,7 @@ test_DATA = \
 	tests/_core-0000.test \
 
 runtest_SOURCES = \
+	src/pipe.h \
 	src/runtest.c \
 	src/subprocess.c \
 	src/subprocess.h \

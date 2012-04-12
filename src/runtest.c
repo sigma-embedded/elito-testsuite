@@ -22,6 +22,8 @@
 #include <getopt.h>
 #include <sysexits.h>
 
+#include <sys/sendfile.h>
+
 #include "subprocess.h"
 #include "util.h"
 
@@ -60,9 +62,47 @@ static void show_version(void)
 	exit(0);
 }
 
+struct runtest_stat {
+	
+};
+
+static void step(void *priv, unsigned long *flags)
+{
+	*flags = 0;
+
+	set_bit(SUBPROCESS_CB_FLAG_STDOUT, flags);
+	set_bit(SUBPROCESS_CB_FLAG_STDERR, flags);
+}
+
+static void handle_io(void *priv, int fd, enum subprocess_cb_source src)
+{
+	ssize_t		l;
+
+	switch (src) {
+	case SUBPROCESS_CB_SOURCE_STDOUT:
+		l = splice(fd, NULL, STDOUT_FILENO, NULL, 64*1024,
+			   SPLICE_F_NONBLOCK);
+		break;
+	case SUBPROCESS_CB_SOURCE_STDERR:
+		l = splice(fd, NULL, STDERR_FILENO, NULL, 64*1024,
+			   SPLICE_F_NONBLOCK);
+		break;
+	default:
+		break;
+	}
+
+	(void)l;
+}
+
 static int run_program(struct cmdline_options const *opts,
 		       int argc, char *argv[])
 {
+	struct subprocess_callbacks	cb = {
+		.fd_monitor = -1,
+		.fn_step = step,
+		.fn_handle = handle_io,
+	};
+
 	struct subprocess	proc;
 	int			rc;
 
@@ -70,9 +110,23 @@ static int run_program(struct cmdline_options const *opts,
 	if (!subprocess_init(&proc, opts->is_interactive))
 		goto out;
 
-	if (!subprocess_spawn(&proc, argc, argv))
+	if (!subprocess_spawn(&proc, argc, argv, NULL, NULL))
 		goto out;
-		
+
+	if (!subprocess_run(&proc, &cb))
+		goto out;
+
+	if (!WIFEXITED(proc.exit_status))
+		goto out;
+
+	if (opts->is_fail && WEXITSTATUS(proc.exit_status) == 0)
+		goto out;
+
+	if (!opts->is_fail && WEXITSTATUS(proc.exit_status) != 0)
+		goto out;
+
+
+	rc = true;
 
 out:
 	subprocess_destroy(&proc);
@@ -91,6 +145,9 @@ int main(int argc, char *argv[])
 		int	c = getopt_long(argc, argv, "+s:f",
 					CMDLINE_OPTIONS, 0);
 
+		if (c==-1)
+			break;
+
 		switch (c) {
 		case CMD_HELP		:  show_help();
 		case CMD_VERSION	:  show_version();
@@ -102,7 +159,6 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	run_program(&opts, argc - optind, &argv[optind]);
-	execvp(argv[1], &argv[1]);
-	return EXIT_FAILURE;
+	return run_program(&opts, argc - optind, &argv[optind]) ?
+		EXIT_SUCCESS : EXIT_FAILURE;
 }
