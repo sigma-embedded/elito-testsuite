@@ -43,7 +43,7 @@ $$(addprefix $$(DESTDIR),$$(_$1_$2)): | $$(DESTDIR)$$($(1)dir)
 	$$(INSTALL_$2) $$^ $$@
 
 $(eval $(call register_directory,$1))
-_install-$1_$2: $$(_$1_$2)
+_install-$1_$2: $$(addprefix $$(DESTDIR),$$(_$1_$2))
 install:	_install-$1_$2
 endef
 
