@@ -41,6 +41,7 @@ bool subprocess_init(struct subprocess *proc, bool is_interactive)
 	proc->pid = -1;
 	proc->pipe_ctl.rd = -1;
 	proc->pipe_ctl.wr = -1;
+	proc->old_chld_mask = 0;
 
 	for (num_p = 0; num_p < ARRAY_SIZE(proc->pipe_std); ++num_p) {
 		if (pipe_create(&proc->pipe_std[num_p]) < 0) {
@@ -92,11 +93,19 @@ void subprocess_destroy(struct subprocess *proc)
 	for (i = ARRAY_SIZE(proc->pipe_std); i > 0; --i)
 		pipe_close(&proc->pipe_std[i-1]);
 
+	if (proc->old_chld_mask) {
+		sigset_t	mask;
+		sigemptyset(&mask);
+		sigaddset(&mask, SIG_BLOCK);
+
+		if (proc->old_chld_mask < 0)
+			sigprocmask(SIG_UNBLOCK, &mask, NULL);
+	}
+
 	if (proc->pid == -1)
 		;			/* noop */
 	else if (waitpid(proc->pid, NULL, 0) != proc->pid)
 		perror("waitpid()");
-
 
 	proc->pid = -1;
 }
@@ -159,8 +168,6 @@ static void subprocess_child_run(struct subprocess *proc,
 static void subprocess_child_terminate(struct subprocess *proc)
 {
 	sigset_t		mask;
-	sigset_t		old_mask;
-	bool			have_oldmask = false;
 	int			sfd = -1;
 
 	assert(proc->pid != -1);
@@ -168,12 +175,6 @@ static void subprocess_child_terminate(struct subprocess *proc)
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
-
-	if (sigprocmask(SIG_BLOCK, &mask, &old_mask) == -1) {
-		perror("sigprocmask(<SIG_BLOCK>, <SIGCHLD>)");
-		goto out;
-	}
-	have_oldmask = true;
 
 	sfd = signalfd(-1, &mask, 0);
 	if (sfd < 0) {
@@ -210,8 +211,6 @@ static void subprocess_child_terminate(struct subprocess *proc)
 
 out:
 	xclose(sfd);
-	if (have_oldmask)
-		sigprocmask(SIG_SETMASK, &old_mask, NULL);
 
 	return;
 }
@@ -251,9 +250,22 @@ bool subprocess_spawn(struct subprocess *proc, int argc, char *argv[],
 		      subprocess_child_cleanup_fn *cleanup_fn, void *priv)
 {
 	bool		rc = false;
+	sigset_t	mask;
+	sigset_t	old_mask;
 
 	assert(proc->is_init);
 	assert(!proc->is_spawned);
+	assert(proc->old_chld_mask == 0);
+
+ 	sigemptyset(&mask);
+ 	sigaddset(&mask, SIGCHLD);
+
+	if (sigprocmask(SIG_BLOCK, &mask, &old_mask) == -1) {
+ 		perror("sigprocmask(<SIG_BLOCK>, <SIGCHLD>)");
+ 		goto out;
+ 	}
+
+	proc->old_chld_mask = sigismember(&old_mask, SIGCHLD) ? 1 : -1;
 
 	proc->pid = fork();
 	proc->is_spawned = proc->pid >= 0;
@@ -284,7 +296,6 @@ static bool subprocess_run_fds_init(struct subprocess_run_fds *fds,
 {
 	sigset_t		mask;
 	bool			rc = false;
-	bool			have_oldmask = false;
 
 	struct itimerspec const	tm = {
 		.it_value = {
@@ -303,12 +314,6 @@ static bool subprocess_run_fds_init(struct subprocess_run_fds *fds,
 
 	sigemptyset(&mask);
 	sigaddset(&mask, SIGCHLD);
-
-	if (sigprocmask(SIG_BLOCK, &mask, &fds->orig_sigmask) == -1) {
-		perror("sigprocmask(<SIG_BLOCK>, <SIGCHLD>)");
-		goto out;
-	}
-	have_oldmask = true;
 
 	fds->signal = signalfd(-1, &mask, 0);
 	if (fds->signal < 0) {
@@ -352,9 +357,6 @@ out:
 		xclose(fds->epoll);
 		xclose(fds->timer);
 		xclose(fds->signal);
-
-		if (have_oldmask)
-			sigprocmask(SIG_SETMASK, &fds->orig_sigmask, NULL);
 
 		/* \hack: use epoll fd to signal unitialized structure */
 		fds->epoll = -1;

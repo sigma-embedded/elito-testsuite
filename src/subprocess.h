@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 #include <unistd.h>
+#include <signal.h>
 #include <sys/resource.h>
 
 #include "pipe.h"
@@ -33,6 +34,9 @@ struct subprocess {
 	struct rusage		rusage;
 	int			exit_status;
 
+	sigset_t		old_mask;
+
+	int			old_chld_mask;
 	bool			is_init;
 	bool			is_spawned;
 };
