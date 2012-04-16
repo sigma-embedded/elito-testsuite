@@ -5,8 +5,9 @@ PACKAGE_NAME = elito-testsuite
 PACKAGE_VERSION = 0.0.1
 
 AM_CFLAGS = -std=gnu99
+AM_CPPFLAGS = -D_GNU_SOURCE
 CFLAGS = -Wall -W -O2 -g -fstack-protector -Wno-unused-parameter -Wstrict-prototypes -Werror
-CPPFLAGS = -D_FORTIFY_SOURCE=2 -D_GNU_SOURCE
+CPPFLAGS = -D_FORTIFY_SOURCE=2
 
 include $(top_srcdir)/mk/common.mk
 
