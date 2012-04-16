@@ -30,6 +30,7 @@ endef
 
 define register_install_location_single
 $$(DESTDIR)$1/$$(notdir $2):	$2
+all:		$2
 endef
 
 ## $(call register_install_location,<dir-name>,<filetype>)

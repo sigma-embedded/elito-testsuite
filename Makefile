@@ -59,4 +59,4 @@ subst/%:	% | subst
 
 runtest:	$(runtest_SOURCES)
 
-install:	
+all install:	
