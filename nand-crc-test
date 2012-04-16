@@ -1,0 +1,120 @@
+#! /bin/bash
+
+DEV=$1
+ERRORS=${2:-10}
+
+shift
+shift
+set -- "$@" 0:0 1:1 2:2 3:3 4:4 5:5 6:6 7:7 8:0 9:1
+
+D=`mktemp -d -t nandtest.XXXXXX` || exit 1
+trap "rm -rf $D" EXIT
+
+F=$D/x
+ES=$[ 0x20000 ]				# erase size
+PS=$[ 2048 ]				# page size
+OOBS=$[ PS + 64 ]
+
+
+NANDDUMP="nanddump -q --bb=dumpbad"
+
+success() {
+    echo " OK"
+}
+
+failure() {
+    echo " FAIL"
+    false
+}
+
+xdd() {
+    dd "$@" 2>/dev/null
+}
+
+verify() {
+    xdd if=$1 bs=${3:-$PS} count=1 | cmp -l - $2
+}
+
+call() {
+    echo -n "$1"
+    shift
+    "$@" && success || failure
+}
+
+toggle_bit() {
+    local file=$1
+    local old_IFS=$IFS
+    local IFS=:
+
+    shift
+    eval set -- $*
+    local pos=$1
+    local bit=$2
+
+    IFS=$old_IFS
+    set -- `hexdump -v -b -s $1 -n 1 "$file"`
+
+    b=`printf "%o" $[ ( 8#$2 ^ (1 << $bit) ) & 0xff ]`
+    printf "\\$b" > $D/bad
+
+    dd if=$D/bad of=$file bs=1 count=1 seek=$pos conv=notrunc 2>/dev/null
+}
+
+set -e
+
+call "creating sample file..." \
+    xdd if=/dev/urandom of=$F bs=2048 count=1
+
+call "erasing flash..." \
+    flash_erase -q $DEV 0 5
+
+call "writing sample file..." \
+    xdd if=$F of=$DEV bs=$PS skip=0 #conv=fsync
+
+#    xdd if=$F of=${DEV/mtd/mtdblock} bs=$PS skip=0
+#    nandwrite -q -s $[ PS * 0 ] $DEV $F
+
+# dummy read
+$NANDDUMP $DEV -n -s $[ PS * 0 ] -o -l $PS -f $F.0 &>/dev/null || :
+call "dumping first page..." \
+  $NANDDUMP $DEV -n -s $[ PS * 0 ] -o -l $PS -f $F.0
+
+call "comparing first page..." \
+    verify $F.0 $F
+
+echo -n "preparing bit error files..."
+t=$F.0
+for i in `seq 1 $ERRORS`; do
+    eval p=\$${i}
+    echo -n " $i($p)"
+
+    cp -a $t $F.$i
+    toggle_bit $F.$i $p
+    t=$F.$i
+done
+success
+   
+echo "writing bit error files..."
+for i in `seq 1 $ERRORS`; do
+    call "  #$i" \
+	nandwrite -q -n -o -s $[ PS * i ] $DEV $F.$i
+done
+
+echo "reading back files..."
+for i in `seq 1 $ERRORS`; do
+    # dummy read
+    $NANDDUMP $DEV -s $[ PS * i ] -o -l $PS -f $F.r_$i &>/dev/null || :
+
+    call "  #$i" \
+	$NANDDUMP $DEV -s $[ PS * i ] -o -l $PS -f $F.r_$i
+done
+
+err=0
+echo "checking read files..."
+for i in `seq 1 $ERRORS`; do
+    call "  #$i" \
+	verify $F.r_$i $F.0 $OOBS || let ++err
+done
+
+
+exit $err

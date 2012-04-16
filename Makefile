@@ -21,6 +21,9 @@ pkglibexec_PROGRAMS = \
 	check-file \
 	read-write \
 
+pkglibexec_SCRIPTS = \
+	nand-crc-test
+
 pkgdata_DATA = subst/runtests.mk functions
 
 test_DATA = \
@@ -54,6 +57,7 @@ _sed_cmd = \
 $(eval $(call register_install_location,bin,SCRIPTS))
 $(eval $(call register_install_location,bin,PROGRAMS))
 $(eval $(call register_install_location,pkglibexec,PROGRAMS))
+$(eval $(call register_install_location,pkglibexec,SCRIPTS))
 $(eval $(call register_install_location,pkgdata,DATA))
 $(eval $(call register_install_location,test,DATA))
 
