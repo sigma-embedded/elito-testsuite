@@ -30,9 +30,11 @@
 /* {{{ cli options */
 #define CMD_HELP		0x8000
 #define CMD_VERSION		0x8001
-#define CMD_SKIP		's'
-#define CMD_FAIL		'f'
-#define CMD_INTERACTIVE		'I'
+#define CMD_SKIP		's'	/* 0x8002 */
+#define CMD_FAIL		'f'	/* 0x8003 */
+#define CMD_INTERACTIVE		'I'	/* 0x8004 */
+#define CMD_QUIET		'q'	/* 0x8005 */
+#define CMD_ID			0x8006
 
 static struct option const	CMDLINE_OPTIONS[] = {
   { "help",        no_argument,        0, CMD_HELP },
@@ -40,13 +42,18 @@ static struct option const	CMDLINE_OPTIONS[] = {
   { "skip",        required_argument,  0, CMD_SKIP },
   { "fail",        no_argument,	       0, CMD_FAIL },
   { "interactive", no_argument,	       0, CMD_INTERACTIVE },
+  { "quiet",       no_argument,	       0, CMD_QUIET },
+  { "id",          required_argument,  0, CMD_ID },
   { 0,0,0,0 }
 };
 
 struct cmdline_options {
 	bool		is_fail;
 	bool		is_interactive;
+	bool		is_quiet;
+	bool		is_tty;
 	char const	*skip_reason;
+	char const	*id;
 };
 /* }}} cli options */
 
@@ -116,6 +123,8 @@ static int run_program(struct cmdline_options const *opts,
 	if (!subprocess_run(&proc, &cb))
 		goto out;
 
+	rc = EX_TEMPFAIL;
+
 	if (!WIFEXITED(proc.exit_status))
 		goto out;
 
@@ -126,7 +135,7 @@ static int run_program(struct cmdline_options const *opts,
 		goto out;
 
 
-	rc = true;
+	rc = EX_OK;
 
 out:
 	subprocess_destroy(&proc);
@@ -138,7 +147,9 @@ int main(int argc, char *argv[])
 {
 	struct cmdline_options		opts = {
 		.is_interactive	= false,
+		.is_quiet = false,
 	};
+	int				rc;
 
 	/* cmdline parsing */
 	while (1) {
@@ -153,13 +164,27 @@ int main(int argc, char *argv[])
 		case CMD_VERSION	:  show_version();
 		case CMD_FAIL 		:  opts.is_fail = true; break;
 		case CMD_SKIP		:  opts.skip_reason = optarg; break;
-		case CMD_INTERACTIVE	:  opts.is_interactive = true; break;
+		case CMD_QUIET 		:  opts.is_quiet = true; break;
+		case CMD_ID		:  opts.id = optarg; break;
 		default:
 			fprintf(stderr, "Try '--help' for more information\n");
 			return EX_USAGE;
 		}
 	}
 
-	return run_program(&opts, argc - optind, &argv[optind]) ?
-		EXIT_SUCCESS : EXIT_FAILURE;
+	if (!opts.is_quiet && opts.id)
+		printf("  Running '%s'...", opts.id);
+
+	if (!opts.is_quiet && opts.skip_reason) {
+		printf(" SKIPPED (%s)\n", opts.skip_reason);
+		rc = EX_OK;
+	} else {
+		rc = run_program(&opts, argc - optind, &argv[optind]);
+		if (rc == EX_OK)
+			printf(" OK\n");
+		else
+			printf(" FAIL\n");
+	}
+
+	return rc;
 }
