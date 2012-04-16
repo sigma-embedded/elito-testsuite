@@ -16,7 +16,11 @@ testdir = $(pkgdatadir)/tests
 VPATH += $(top_srcdir)
 
 bin_SCRIPTS = subst/runtests
-pkglibexec_PROGRAMS = runtest
+pkglibexec_PROGRAMS = \
+	runtest \
+	check-file \
+	read-write \
+
 pkgdata_DATA = subst/runtests.mk functions
 
 test_DATA = \
@@ -33,6 +37,12 @@ runtest_SOURCES = \
 	src/subprocess.h \
 	src/util.h
 
+check-file_SOURCES = \
+	src/check-file.c
+
+read-write_SOURCES = \
+	src/read-write.c
+
 _sed_cmd = \
   -e 's!@PKGLIBEXECDIR@!$(pkglibexecdir)!g' \
   -e 's!@PKGDATADIR@!$(pkgdatadir)!g' \
@@ -48,6 +58,8 @@ $(eval $(call register_install_location,pkgdata,DATA))
 $(eval $(call register_install_location,test,DATA))
 
 $(eval $(call build_c_program,runtest))
+$(eval $(call build_c_program,check-file))
+$(eval $(call build_c_program,read-write))
 
 subst:
 	$(MKDIR_P) $@
