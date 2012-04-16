@@ -25,7 +25,6 @@ prog_success=false
 tmpdir=$(mktemp -d -t runtests.XXXXXX) || panic "Could not create tmpdir"
 trap "
 \$prog_success || cat $tmpdir/debug
-cat \$MFILE
 rm -rf $tmpdir
 " EXIT
 
@@ -295,6 +294,5 @@ EOF
   done
 ) >> $MFILE
 
-ls -l $TESTDIR
-make -C $tmpdir -f $MFILE run-categories -k
-#prog_success=true
+make -s --no-print-directory -C $tmpdir -f $MFILE run-categories -k
+prog_success=true
