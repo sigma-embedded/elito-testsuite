@@ -553,6 +553,7 @@ bool subprocess_run(struct subprocess *proc,
 
 		sources_mask = 0;
 		while (nfds-- > 0) {
+			unsigned long	evs = events[nfds].events;
 			src = events[nfds].data.u32;
 
 			if (src > SUBPROCESS_CB_SOURCE_EXIT)
@@ -561,8 +562,8 @@ bool subprocess_run(struct subprocess *proc,
 
 			set_bit(src, &sources_mask);
 
-			if ((events[nfds].events == EPOLLHUP) ||
-			    (events[nfds].events | EPOLLERR))
+
+			if ((evs == EPOLLHUP) || (evs & EPOLLERR))
 				clear_bit(src, &hup_mask);
 		}
 
