@@ -480,6 +480,13 @@ bool subprocess_run(struct subprocess *proc,
 	assert((int)SUBPROCESS_CB_FLAG_STDOUT  == (int)SUBPROCESS_CB_SOURCE_STDOUT);
 	assert((int)SUBPROCESS_CB_FLAG_STDERR  == (int)SUBPROCESS_CB_SOURCE_STDERR);
 
+	if (cb->fd_monitor != -1)
+		set_bit(SUBPROCESS_CB_SOURCE_MONITOR, &hup_mask);
+
+	set_bit(SUBPROCESS_CB_SOURCE_STDIN,  &hup_mask);
+	set_bit(SUBPROCESS_CB_SOURCE_STDOUT, &hup_mask);
+	set_bit(SUBPROCESS_CB_SOURCE_STDERR, &hup_mask);
+
 	/* \todo: allow to customize timeout */
 	if (!subprocess_run_fds_init(&fds, 10))
 		/* \todo: signal OSERR */
@@ -502,13 +509,18 @@ bool subprocess_run(struct subprocess *proc,
 		enum subprocess_cb_source	src;
 
 		flags = 0;
-		cb->fn_step(cb->priv, &flags);
+		if (old_flags != ~0Lu)
+			cb->fn_step(cb->priv, &flags);
+		else {
+			/* check all fds on first run */
+			set_bit(SUBPROCESS_CB_SOURCE_MONITOR, &flags);
+			set_bit(SUBPROCESS_CB_SOURCE_STDIN, &flags);
+			set_bit(SUBPROCESS_CB_SOURCE_STDOUT, &flags);
+			set_bit(SUBPROCESS_CB_SOURCE_STDERR, &flags);
+			old_flags = ~flags;
+		}
 
 //		printf("%s:%u -> flags=%04lx\n", __func__, __LINE__, flags);
-
-		if (old_flags == ~0Lu)
-			/* first run */
-			old_flags = ~flags;
 
 		if (test_bit(SUBPROCESS_CB_FLAG_QUIT, &flags))
 			break;
@@ -519,7 +531,7 @@ bool subprocess_run(struct subprocess *proc,
 			if (cb_fds[src].fd < 0)
 				continue;
 
-			if (test_bit(src, &hup_mask))
+			if (!test_bit(src, &hup_mask))
 				clear_bit(src, &flags);
 
 			rc = subprocess_mod_epoll(fds.epoll, cb_fds,
@@ -547,8 +559,9 @@ bool subprocess_run(struct subprocess *proc,
 
 			set_bit(src, &sources_mask);
 
-			if (events[nfds].events == EPOLLHUP)
-				set_bit(src, &hup_mask);
+			if ((events[nfds].events == EPOLLHUP) ||
+			    (events[nfds].events | EPOLLERR))
+				clear_bit(src, &hup_mask);
 		}
 
 		if (!subprocess_run_exec_cb(cb, sources_mask, cb_fds))

@@ -153,6 +153,7 @@ int main(int argc, char *argv[])
 		case CMD_VERSION	:  show_version();
 		case CMD_FAIL 		:  opts.is_fail = true; break;
 		case CMD_SKIP		:  opts.skip_reason = optarg; break;
+		case CMD_INTERACTIVE	:  opts.is_interactive = true; break;
 		default:
 			fprintf(stderr, "Try '--help' for more information\n");
 			return EX_USAGE;
