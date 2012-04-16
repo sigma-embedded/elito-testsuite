@@ -16,16 +16,19 @@
 
 pkglibdir='@PKGLIBDIR@'
 pkgdatadir='@PKGDATADIR@'
+pkglibexecdir='@PKGLIBEXECDIR@'
 ### development line ###
-pkglibdir=${_pkglibdir:-.}; pkgdatadir=${_pkgdatadir:-.}
+pkglibdir=${_pkglibdir:-.}; pkgdatadir=${_pkgdatadir:-.}; pkglibexecdir=${_pkglibexecdir:-.}
 
 . "${pkgdatadir}/functions"
 
+_do_keep_temp=false
 prog_success=false
+
 tmpdir=$(mktemp -d -t runtests.XXXXXX) || panic "Could not create tmpdir"
 trap "
 \$prog_success || cat $tmpdir/debug
-rm -rf $tmpdir
+\$_do_keep_temp || rm -rf $tmpdir
 " EXIT
 
 MFILE=$tmpdir/test.mk
@@ -69,16 +72,19 @@ register_group() {
     done
 }
 
-eval set -- `\
+opts=`\
   getopt --name $0 \
-  --longoptions groups:,directory:,environment:,help,version \
-  -o d:g:e: -- "$@"`
+  --longoptions groups:,directory:,environment:,debug,keep-temp,help,version \
+  -o d:g:e: -- "$@"` || exit 1
+
+eval set -- $opts
 
 _directory=( )
 _environment=( )
 _user_groups=false
 _groups_pos=( )
 _groups_neg=( )
+_do_debug=false
 
 while true; do
     case $1 in
@@ -97,6 +103,14 @@ while true; do
       (--environment|-e)
 	    _environment=( "$2" )
 	    shift
+	    ;;
+
+      (--debug)
+	    _do_debug=true
+	    ;;
+
+      (--keep-temp)
+	    _do_keep_temp=true
 	    ;;
 
       (--)
@@ -167,7 +181,11 @@ for d in "${_directory[@]}"; do
 done
 
 cat <<EOF >$MFILE
+pkgdatadir = ${pkgdatadir}
+pkglibdir = ${pkglibdir}
+pkglibexecdir = ${pkglibexecdir}
 TESTDIR = $TESTDIR
+TMPDIR = $tmpdir
 
 include $pkgdatadir/runtests.mk
 
@@ -191,6 +209,7 @@ for t in "${_tests[@]}"; do
       ENVIRONMENTS=ANY
       NO_ENVIRONMENTS=NONE
       FAILS=
+      DEPENDS=
 
       . "$fname"
 
@@ -228,6 +247,7 @@ for t in "${_tests[@]}"; do
 #! /bin/bash -e
 
 . $TESTDIR/$tnum.lnk
+$_do_debug && set -x
 run
 EOF
 
@@ -247,7 +267,7 @@ run-categories: category-\$(_category)
 category-\$(_category):	test-$tnum
 test-$tnum: | category_start-\$(_category)
 test-$tnum: RUNTEST_OPTS=$opts
-test-$tnum: ID=$t
+test-$tnum: export ID=$t
 EOF
     )
 
@@ -294,5 +314,6 @@ EOF
   done
 ) >> $MFILE
 
-make -s --no-print-directory -C $tmpdir -f $MFILE run-categories -k
+$_do_debug || export MAKEFLAGS=-s
+make --no-print-directory -C $tmpdir -f $MFILE run-categories -k
 prog_success=true
