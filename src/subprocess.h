@@ -26,6 +26,7 @@
 
 struct subprocess {
 	bool			is_interactive;
+	unsigned int		timeout; /* modify directly! */
 
 	pid_t			pid;
 	struct pipe		pipe_ctl;

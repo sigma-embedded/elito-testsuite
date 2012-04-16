@@ -35,6 +35,7 @@
 #define CMD_INTERACTIVE		'I'	/* 0x8004 */
 #define CMD_QUIET		'q'	/* 0x8005 */
 #define CMD_ID			0x8006
+#define CMD_TIMEOUT		0x8007
 
 static struct option const	CMDLINE_OPTIONS[] = {
   { "help",        no_argument,        0, CMD_HELP },
@@ -44,6 +45,7 @@ static struct option const	CMDLINE_OPTIONS[] = {
   { "interactive", no_argument,	       0, CMD_INTERACTIVE },
   { "quiet",       no_argument,	       0, CMD_QUIET },
   { "id",          required_argument,  0, CMD_ID },
+  { "timeout",    required_argument,   0, CMD_TIMEOUT },
   { 0,0,0,0 }
 };
 
@@ -54,6 +56,7 @@ struct cmdline_options {
 	bool		is_tty;
 	char const	*skip_reason;
 	char const	*id;
+	unsigned int	timeout;
 };
 /* }}} cli options */
 
@@ -117,6 +120,8 @@ static int run_program(struct cmdline_options const *opts,
 	if (!subprocess_init(&proc, opts->is_interactive))
 		goto out;
 
+	proc.timeout = opts->timeout;
+
 	if (!subprocess_spawn(&proc, argc, argv, NULL, NULL))
 		goto out;
 
@@ -166,6 +171,7 @@ int main(int argc, char *argv[])
 		case CMD_SKIP		:  opts.skip_reason = optarg; break;
 		case CMD_QUIET 		:  opts.is_quiet = true; break;
 		case CMD_ID		:  opts.id = optarg; break;
+		case CMD_TIMEOUT	:  opts.timeout = atoi(optarg); break;
 		default:
 			fprintf(stderr, "Try '--help' for more information\n");
 			return EX_USAGE;

@@ -37,6 +37,7 @@ bool subprocess_init(struct subprocess *proc, bool is_interactive)
 	proc->is_init = false;
 	proc->is_interactive = is_interactive;
 	proc->is_spawned = false;
+	proc->timeout = 5;
 
 	proc->pid = -1;
 	proc->pipe_ctl.rd = -1;
@@ -189,8 +190,7 @@ static void subprocess_child_terminate(struct subprocess *proc)
 	else {
 		fd_set			fds;
 		struct timeval		tv = {
-			/* \todo: allow configuration of timeout */
-			.tv_sec = 2,
+			.tv_sec = proc->timeout,
 			.tv_usec = 0,
 		};
 
