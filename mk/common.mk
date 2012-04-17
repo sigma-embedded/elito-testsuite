@@ -49,7 +49,7 @@ endef
 
 
 define build_c_program
-$1:	private _c_opts = $(foreach O,CPP C LD, $$(AM_$(O)FLAGS) $$($(O)FLAGS) $$($1_$(O)FLAGS))
+$1:	_c_opts = $(foreach O,CPP C LD, $$(AM_$(O)FLAGS) $$($(O)FLAGS) $$($1_$(O)FLAGS))
 $1:	$$($1_SOURCES) $$($1_LDADD)
 	$$(CC) $$(_c_opts) $$(filter %.c,$$^) -o $$@ $$(AM_LIBS) $$(LIBS) $$($1_LDADD)
 endef
